@@ -1,11 +1,12 @@
 package log
 
 import (
-	"github.com/stretchr/testify/require"
 	"io"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestIndex creates and index file, making it big enough

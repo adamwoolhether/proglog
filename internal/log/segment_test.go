@@ -1,12 +1,14 @@
 package log
 
 import (
-	api "github.com/adamwoolhether/proglog/api/v1"
-	"github.com/stretchr/testify/require"
 	"io"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	api "github.com/adamwoolhether/proglog/api/v1"
 )
 
 func TestSegment(t *testing.T) {

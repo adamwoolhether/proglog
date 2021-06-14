@@ -4,6 +4,45 @@ package log.v1;
 
 option go_package = "github.com/adamwoolhether/api/log_v1";
 
+// service defines the service for the compiler to generate.
+// each RPC line is an endpoint in that service, specifying
+// the request type and response that is accepted by the
+// endpoint. Requests and responses are messages that the
+// compiler turns into Go structs.
+
+// Clients send messages to our server side ConsumeStream
+// RPC, which sends back a stream of sequence messages.
+// ProduceStream is bidirectional, both client and server
+// message sequences using a read-write stream. The two
+// streams operate independently.
+service Log {
+  rpc Produce(ProduceRequest) returns (ProduceResponse) {}
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse) {}
+  rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse) {}
+  rpc ProduceStream(stream ProduceRequest) returns (stream ProduceResponse) {}
+}
+
+// Define our requests and responses:
+// Request includes the record to produce the log, and the
+// response sends back the record's offset (the record's
+// identifier.
+// For consuming, the user specifies the offset of legs
+// they want to consume, and server response with that
+// record.
+message ProduceRequest {
+  Record record = 1;
+}
+message ProduceResponse {
+  uint64 offset = 1;
+}
+message ConsumeRequest {
+  uint64 offset = 1;
+}
+message ConsumeResponse {
+  Record record = 2;
+}
+
+
 message Record {
   bytes value = 1;
   uint64 offset = 2;

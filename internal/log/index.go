@@ -1,9 +1,10 @@
 package log
 
 import (
-	"github.com/tysontate/gommap"
 	"io"
 	"os"
+
+	"github.com/tysontate/gommap"
 )
 
 // Index entries contain two fields: the record's offset
