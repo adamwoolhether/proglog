@@ -15,9 +15,10 @@ type Config struct {
 var _ api.LogServer = (*grpcServer)(nil)
 
 // NewGRPCServer allows users a way to instantiate the service, create
-// a gRPC server, and register the service to that server.
-func NewGRPCServer(config *Config) (*grpc.Server, error) {
-	gsrv := grpc.NewServer()
+// a gRPC server, and register the service to that server. For opts, see:
+// https://pkg.go.dev/google.golang.org/grpc?utm_source=godoc#ServerOption
+func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, error) {
+	gsrv := grpc.NewServer(opts...)
 	srv, err := newgrpcServer(config)
 	if err != nil {
 		return nil, err

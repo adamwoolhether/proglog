@@ -81,7 +81,7 @@ func (s *segment) Append(record *api.Record) (offset uint64, err error) {
 		uint32(s.nextOffset-uint64(s.baseOffset)),
 		pos,
 	); err != nil {
-		return 0, nil
+		return 0, err
 	}
 	s.nextOffset++
 	return cur, nil
