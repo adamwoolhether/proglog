@@ -3,6 +3,7 @@ module github.com/adamwoolhether/proglog
 go 1.15
 
 require (
+	github.com/casbin/casbin v1.9.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.0
 	github.com/gorilla/mux v1.8.0
