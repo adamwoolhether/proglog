@@ -4,15 +4,19 @@ import (
 	"context"
 	"io/ioutil"
 	"net"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	api "github.com/adamwoolhether/proglog/api/v1"
+	"github.com/adamwoolhether/proglog/internal/auth"
 	"github.com/adamwoolhether/proglog/internal/config"
 	"github.com/adamwoolhether/proglog/internal/log"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
 
 // TestServer defines our list of test cases and runs a subtest
@@ -27,6 +31,7 @@ func TestServer(t *testing.T) {
 		"produce/consume a message to/from the log succeesds": testProduceConsume,
 		"produce/consume stream succeeds":                     testProduceConsumeStream,
 		"consume past log boundary fails":                     testConsumePastBoundary,
+		"unauthorized fails":                                  testUnauthorized,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			rootClient, nobodyClient, config, teardown := setupTest(t, nil)
@@ -47,9 +52,7 @@ func TestServer(t *testing.T) {
 // The server is created and starts serving requests in a
 // goroutine. It must bu run in a goroutine because Serve
 // is a blocking call.
-func setupTest(t *testing.T, fn func(config *Config)) (
-	rootClient api.LogClient,
-	nobodyClient api.LogClient,
+func setupTest(t *testing.T, fn func(*Config)) (rootClient api.LogClient, nobodyClient api.LogClient,
 	cfg *Config,
 	teardown func(),
 ) {
@@ -88,19 +91,6 @@ func setupTest(t *testing.T, fn func(config *Config)) (
 		config.NobodyClientKeyFile,
 	)
 
-	// clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-	// 	CertFile: config.ClientCertFile,
-	// 	KeyFile:  config.ClientKeyFile,
-	// 	CAFile:   config.CAFile,
-	// })
-	// require.NoError(t, err)
-	//
-	// clientCreds := credentials.NewTLS(clientTLSConfig)
-	// cc, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(clientCreds)) //grpc.WithInsecure()
-	// require.NoError(t, err)
-	//
-	// client = api.NewLogClient(cc)
-
 	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
 		CertFile:      config.ServerCertFile,
 		KeyFile:       config.ServerKeyFile,
@@ -114,13 +104,17 @@ func setupTest(t *testing.T, fn func(config *Config)) (
 
 	dir, err := ioutil.TempDir("", "server-test")
 	require.NoError(t, err)
+	defer os.RemoveAll(dir)
 
 	clog, err := log.NewLog(dir, log.Config{})
 	require.NoError(t, err)
 
+	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 	cfg = &Config{
-		CommitLog: clog,
+		CommitLog:  clog,
+		Authorizer: authorizer,
 	}
+
 	if fn != nil {
 		fn(cfg)
 	}
@@ -163,6 +157,37 @@ func testProduceConsume(t *testing.T, client, _ api.LogClient, config *Config) {
 	require.NoError(t, err)
 	require.Equal(t, want.Value, consume.Record.Value)
 	require.Equal(t, want.Offset, consume.Record.Offset)
+}
+
+// testUnauthorized uses the nobodyClient, which doesn't have any permissions.
+// If the server response does not deny the client, then the test has failed.
+func testUnauthorized(t *testing.T, _, client api.LogClient, config *Config) {
+	ctx := context.Background()
+	produce, err := client.Produce(ctx, &api.ProduceRequest{
+		Record: &api.Record{
+			Value: []byte("hello world"),
+		},
+	})
+	if produce != nil {
+		t.Fatalf("produce response should be nil")
+	}
+
+	gotCode, wantCode := status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
+	}
+
+	consume, err := client.Consume(ctx, &api.ConsumeRequest{
+		Offset: 0,
+	})
+	if consume != nil {
+		t.Fatalf("consume response should be nil")
+	}
+	gotCode, wantCode = status.Code(err), codes.PermissionDenied
+	if gotCode != wantCode {
+		t.Fatalf("got code: %d, want: %d", gotCode, wantCode)
+	}
+
 }
 
 // testConsumePastBoundary tests that our server response with an
