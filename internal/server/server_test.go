@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc"
 
 	api "github.com/adamwoolhether/proglog/api/v1"
-	"github.com/adamwoolhether/proglog/internal/log"
 	"github.com/adamwoolhether/proglog/internal/config"
+	"github.com/adamwoolhether/proglog/internal/log"
 	"google.golang.org/grpc/credentials"
 )
 
@@ -23,12 +23,9 @@ func TestServer(t *testing.T) {
 		client api.LogClient,
 		config *Config,
 	){
-		"produce/consume a message to/from the log succeesds":
-		testProduceConsume,
-		"produce/consume stream succeeds":
-		testProduceConsumeStream,
-		"consume past log boundary fails":
-		testConsumePastBoundary,
+		"produce/consume a message to/from the log succeesds": testProduceConsume,
+		"produce/consume stream succeeds":                     testProduceConsumeStream,
+		"consume past log boundary fails":                     testConsumePastBoundary,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			client, config, teardown := setupTest(t, nil)
@@ -60,7 +57,9 @@ func setupTest(t *testing.T, fn func(config *Config)) (
 	require.NoError(t, err)
 
 	clientTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-		CAFile: config.CAFile,
+		CertFile: config.ClientCertFile,
+		KeyFile:  config.ClientKeyFile,
+		CAFile:   config.CAFile,
 	})
 	require.NoError(t, err)
 
@@ -71,10 +70,11 @@ func setupTest(t *testing.T, fn func(config *Config)) (
 	client = api.NewLogClient(cc)
 
 	serverTLSConfig, err := config.SetupTLSConfig(config.TLSConfig{
-		CertFile: config.ServerCertFile,
-		KeyFile: config.ServerKeyFile,
-		CAFile: config.CAFile,
+		CertFile:      config.ServerCertFile,
+		KeyFile:       config.ServerKeyFile,
+		CAFile:        config.CAFile,
 		ServerAddress: l.Addr().String(),
+		Server:        true,
 	})
 	require.NoError(t, err)
 
