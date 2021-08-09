@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -12,6 +13,13 @@ import (
 	api "github.com/adamwoolhether/proglog/api/v1"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"go.opencensus.io/plugin/ocgrpc"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/trace"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type Config struct {
@@ -31,16 +39,45 @@ var _ api.LogServer = (*grpcServer)(nil)
 // NewGRPCServer allows users a way to instantiate the service, create
 // a gRPC server, and register the service to that server. For opts, see:
 // https://pkg.go.dev/google.golang.org/grpc?utm_source=godoc#ServerOption
-func NewGRPCServer(config *Config, opts ...grpc.ServerOption) (*grpc.Server, error) {
+func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (*grpc.Server, error) {
+	// configure the Zap logger. Logger is named to differentiate
+	// from other logs in our service. 'grpc.time_ns' field is added
+	// to log duration of each request.
+	logger := zap.L().Named("server")
+	zapOpts := []grpc_zap.Option{
+		grpc_zap.WithDurationField(
+			func(duration time.Duration) zapcore.Field {
+				return zap.Int64("grpc.time_ns", duration.Nanoseconds())
+			},
+		),
+	}
+	// configure how Open-Census collects metrics and traces.
+	// we always sample traces for development and want all
+	// requests to be traced, this may affect performance in prod.
+	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	err := view.Register(ocgrpc.DefaultServerViews...)
+	if err != nil {
+		return nil, err
+	}
 	// hook up authenticate interceptor to gRPC server to
 	// identify the subject of each RPC to initiate authorization.
-	opts = append(opts, grpc.StreamInterceptor(
-		grpc_middleware.ChainStreamServer(
-			grpc_auth.StreamServerInterceptor(authenticate),
-		)), grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-		grpc_auth.UnaryServerInterceptor(authenticate),
-	)))
-	gsrv := grpc.NewServer(opts...)
+	// also configure gRPC to apply Zap interceptors for logging
+	// gRPC calls, and attach OpenCensus as server's stat handler,
+	// allowing stats recording on server request handling.
+	grpcOpts = append(grpcOpts,
+		grpc.StreamInterceptor(
+			grpc_middleware.ChainStreamServer(
+				grpc_ctxtags.StreamServerInterceptor(),
+				grpc_zap.StreamServerInterceptor(logger, zapOpts...),
+				grpc_auth.StreamServerInterceptor(authenticate),
+			)), grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+			grpc_ctxtags.UnaryServerInterceptor(),
+			grpc_zap.UnaryServerInterceptor(logger, zapOpts...),
+			grpc_auth.UnaryServerInterceptor(authenticate),
+		)),
+		grpc.StatsHandler(&ocgrpc.ServerHandler{}),
+	)
+	gsrv := grpc.NewServer(grpcOpts...)
 	srv, err := newgrpcServer(config)
 	if err != nil {
 		return nil, err
@@ -95,6 +132,7 @@ func (s *grpcServer) Consume(ctx context.Context, req *api.ConsumeRequest) (
 }
 
 // Now implement the streaming APIs:
+
 // ProduceStream implements a bidirectional streaming RPC, allowing the client
 // to stream data into the server's log, and the server responds to whether
 // the request succeeded or not.

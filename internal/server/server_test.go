@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"flag"
 	"io/ioutil"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -17,7 +19,27 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
+
+	"go.opencensus.io/examples/exporter"
+	"go.uber.org/zap"
 )
+
+// debug flags to enable observability output
+var debug = flag.Bool("debug", false, "Enable observability for debugging.")
+
+// TestMain allows for a setup that applies to all tests in that file,
+// such as enabling debug output.
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		zap.ReplaceGlobals(logger)
+	}
+	os.Exit(m.Run())
+}
 
 // TestServer defines our list of test cases and runs a subtest
 // for each case.
@@ -115,6 +137,29 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient api.LogClient, nobody
 		Authorizer: authorizer,
 	}
 
+	// setup and start telemetry exporter to write two
+	// new files. Each test get's a separate trace and
+	// metrics file to see each test's requests.
+	var telemetryExporter *exporter.LogExporter
+	if *debug {
+		metricsLogFile, err := ioutil.TempFile("", "metrics-*.log")
+		require.NoError(t, err)
+		t.Logf("metrics log file: %s", metricsLogFile.Name())
+
+		tracesLogFile, err := ioutil.TempFile("", "traces-*.log")
+		require.NoError(t, err)
+		t.Logf("traces log file: %s", tracesLogFile.Name())
+
+		telemetryExporter, err = exporter.NewLogExporter(exporter.Options{
+			ReportingInterval: time.Second,
+			MetricsLogFile:    metricsLogFile.Name(),
+			TracesLogFile:     tracesLogFile.Name(),
+		})
+		require.NoError(t, err)
+		err = telemetryExporter.Start()
+		require.NoError(t, err)
+	}
+
 	if fn != nil {
 		fn(cfg)
 	}
@@ -130,6 +175,11 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient api.LogClient, nobody
 		rootConn.Close()
 		nobodyConn.Close()
 		l.Close()
+		if telemetryExporter != nil {
+			time.Sleep(1500 * time.Millisecond)
+			telemetryExporter.Stop()
+			telemetryExporter.Close()
+		}
 	}
 }
 
