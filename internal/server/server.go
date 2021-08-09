@@ -54,7 +54,7 @@ func NewGRPCServer(config *Config, grpcOpts ...grpc.ServerOption) (*grpc.Server,
 	}
 	// configure how Open-Census collects metrics and traces.
 	// we always sample traces for development and want all
-	// requests to be traced, this may affect performance in prod.
+	// requests to be traced, this may affect performance in prod.git d
 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 	err := view.Register(ocgrpc.DefaultServerViews...)
 	if err != nil {
