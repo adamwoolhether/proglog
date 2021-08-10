@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/serf v0.9.5 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.7.0
+	github.com/travisjeffery/go-dynaport v1.0.0 // indirect
 	github.com/tysontate/gommap v0.0.0-20210506040252-ef38c88b18e1
 	go.opencensus.io v0.23.0
 	go.uber.org/goleak v1.1.10 // indirect
