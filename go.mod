@@ -8,6 +8,7 @@ require (
 	github.com/golang/protobuf v1.5.0
 	github.com/gorilla/mux v1.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
+	github.com/hashicorp/memberlist v0.2.4 // indirect
 	github.com/hashicorp/serf v0.9.5 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.7.0
