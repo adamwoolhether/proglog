@@ -41,8 +41,8 @@ type Config struct {
 	RPCPort int
 	NodeName string
 	StartJoinAddrs []string
-	ACLModeFile string
-	ACLPolicyFile string
+	ACLModelFile   string
+	ACLPolicyFile  string
 }
 
 func (c Config) RPCAddr() (string, error) {
@@ -91,7 +91,7 @@ func (a *Agent) setupLog() error {
 }
 
 func (a *Agent) setupServer() error {
-	authorizer := auth.New(a.Config.ACLModeFile, a.Config.ACLPolicyFile)
+	authorizer := auth.New(a.Config.ACLModelFile, a.Config.ACLPolicyFile)
 	serverConfig := &server.Config{
 		CommitLog: a.log,
 		Authorizer: authorizer,
