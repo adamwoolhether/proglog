@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	raftboltdb "github.com/hashicorp/raft-boltdb"
 
 	"github.com/hashicorp/raft"
+
+	api "github.com/adamwoolhether/proglog/api/v1"
 )
 
 type DistributedLog struct {
@@ -99,7 +102,7 @@ func(l *DistributedLog) setupRaft(dataDir string) error {
 		config.CommitTimeout = l.config.Raft.CommitTimeout
 	}
 
-	l.raft, err := raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, transport)
+	l.raft, err = raft.NewRaft(config, fsm, logStore, stableStore, snapshotStore, transport)
 	if err != nil {
 		return err
 	}
@@ -118,18 +121,31 @@ func(l *DistributedLog) setupRaft(dataDir string) error {
 		err = l.raft.BootstrapCluster(config).Error()
 	}
 	return err
+}
 
+// Append appends the record to the log, it tells Raft to apply a command
+// using ProduceRequest, which tells FSM to append the reocrd to the log,
+// running log replication to replicate the command to the Raft servers.
+func (l *DistributedLog) Append(record *api.Record) (uint64, error) {
+	res, err := l.apply(AppendRequestType, &api.ProduceRequest{Record: record})
+	if err != nil {
+		return 0, err
+	}
+	return res.(*api.ProduceResponse).Offset, nil
+}
+
+func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (interface{}, error) {
 
 }
 
-// type fsm struct {
-// 	log *Log
-// }
-//
-// func newLogStore(dir string, c Config) (*logStore, error) {
-//
-// }
-//
-// type logStore struct {
-// 	*Log
-// }
+type fsm struct {
+	log *Log
+}
+
+func newLogStore(dir string, c Config) (*logStore, error) {
+
+}
+
+type logStore struct {
+	*Log
+}
