@@ -2,7 +2,10 @@ package log
 
 import (
 	"bytes"
+	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,8 +20,8 @@ import (
 
 type DistributedLog struct {
 	config Config
-	log *Log
-	raft *raft.Raft
+	log    *Log
+	raft   *raft.Raft
 }
 
 // NewDistributedLog defines and creates the log,
@@ -26,7 +29,7 @@ type DistributedLog struct {
 // replicated Raft log will exist alongside our
 // single-server, non-replicated log also build in
 // package log.
-func NewDistributedLog(dataDir string, config Config) (*DistributedLog, error){
+func NewDistributedLog(dataDir string, config Config) (*DistributedLog, error) {
 	l := &DistributedLog{
 		config: config,
 	}
@@ -54,7 +57,7 @@ func (l *DistributedLog) setupLog(dataDir string) error {
 // setupRaft configures and creates the server's Raft instance.
 // It creates a finite-state machine (FSM), and the log store.
 // Initial offset of 1 is required by Raft.
-func(l *DistributedLog) setupRaft(dataDir string) error {
+func (l *DistributedLog) setupRaft(dataDir string) error {
 	fsm := &fsm{log: l.log}
 
 	logDir := filepath.Join(dataDir, "raft", "log")
@@ -114,7 +117,7 @@ func(l *DistributedLog) setupRaft(dataDir string) error {
 	if l.config.Raft.Bootstrap && !hasState {
 		config := raft.Configuration{
 			Servers: []raft.Server{{
-				ID: config.LocalID,
+				ID:      config.LocalID,
 				Address: transport.LocalAddr(),
 			}},
 		}
@@ -155,7 +158,7 @@ func (l *DistributedLog) apply(reqType RequestType, req proto.Message) (interfac
 	}
 
 	// Apply the command to FSM, replicating the record and appending to the leader's log
-	timeout :=10 *time.Second
+	timeout := 10 * time.Second
 	future := l.raft.Apply(buf.Bytes(), timeout)
 	if future.Error() != nil {
 		return nil, future.Error()
@@ -325,8 +328,8 @@ func (l *logStore) StoreLogs(records []*raft.Log) error {
 	for _, record := range records {
 		if _, err := l.Append(&api.Record{
 			Value: record.Data,
-			Term: record.Term,
-			Type: uint32(record.Type),
+			Term:  record.Term,
+			Type:  uint32(record.Type),
 		}); err != nil {
 			return err
 		}
@@ -337,3 +340,77 @@ func (l *logStore) StoreLogs(records []*raft.Log) error {
 func (l *logStore) DeleteRange(min, max uint64) error {
 	return l.Truncate(max)
 }
+
+var _ raft.StreamLayer = (*StreamLayer)(nil-)
+
+// StreamLayer satisfies Raft's StreamLayer interface:
+/*type StreamLayer interface {
+	net.Listener
+	// Dial creates a new outgoing connection
+	Dial(address ServerAddress, timeout time.Duration) (net.Conn, error)
+}*/
+type StreamLayer struct {
+	ln              net.Listener
+	serverTLSConfig *tls.Config
+	peerTLSConfig   *tls.Config
+}
+
+func NewStreamLayer(ln net.Listener, serverTLSConfig, peerTLSConfig *tls.Config) *StreamLayer {
+	return &StreamLayer{
+		ln:              ln,
+		serverTLSConfig: serverTLSConfig,
+		peerTLSConfig:   peerTLSConfig,
+	}
+}
+
+const RaftRPC = 1
+
+// Dial makes outgoing connections to other servers in the Raft cluster.
+// Upon connection, the RaftRPC byte is written, identifyin the connection
+// type, allowing multiplexion of Raft on same port as the Log gRPC requests.
+func (s *StreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: timeout}
+	var conn, err = dialer.Dial("tcp", string(addr))
+	if err != nil {
+		return nil, err
+	}
+	// identify to mux this is a raft rpm
+	_, err = conn.Write([]byte{byte(RaftRPC)})
+	if err != nil {
+		return nil, err
+	}
+	if s.peerTLSConfig != nil {
+		conn = tls.Client(conn, s.peerTLSConfig)
+	}
+	return conn, err
+}
+
+// Accept is a mirror of Dial, accepts incoming requests,
+// reads the byte that identifies the connection and creates
+// server-side TLS connection.
+func (s *StreamLayer) Accept() (net.Conn, error) {
+	conn, err := s.ln.Accept()
+	if err != nil {
+		return nil, err
+	}
+	b := make([]byte, 1)
+	_, err = conn.Read(b)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Compare([]byte{byte(RaftRPC)}, b) != 0{
+		return nil, fmt.Errorf("not a raft rpc")
+	}
+	return conn, nil
+}
+
+// Close closes the listener.
+func (s *StreamLayer) Close() error {
+	return s.ln.Close()
+}
+
+// Addr return the listener's address.
+func (s *StreamLayer) Addr() net.Addr {
+	return s.ln.Addr()
+}
+
