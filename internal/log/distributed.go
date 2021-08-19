@@ -190,6 +190,72 @@ const (
 	AppendRequestType RequestType = 0
 )
 
+// Join adds the server to the Raft cluster. All server's are
+// added as a votes, but can be nonvoters with the AddNonVoter
+// API.
+func (l *DistributedLog) Join(id, addr string) error {
+	configFuture := l.raft.GetConfiguration()
+	if err := configFuture.Error(); err != nil {
+		return err
+	}
+	serverID := raft.ServerID(id)
+	serverAddr := raft.ServerAddress(addr)
+
+	for _, srv := range configFuture.Configuration().Servers {
+		if srv.ID == serverID || srv.Address == serverAddr {
+			if srv.ID == serverID && srv.Address == serverAddr {
+				// server has already joined
+				return nil
+			}
+			// remove the existing server
+			removeFuture := l.raft.RemoveServer(serverID, 0, 0)
+			if err := removeFuture.Error(); err != nil {
+				return err
+			}
+		}
+	}
+
+	addFuture := l.raft.AddVoter(serverID, serverAddr, 0, 0)
+	if err := addFuture.Error(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Leave removes the server from the cluster.
+func (l *DistributedLog) Leave(id string) error {
+	removeFuture := l.raft.RemoveServer(raft.ServerID(id), 0, 0)
+	return removeFuture.Error()
+}
+
+// WaitForLeader blocks until the cluster has elected a leader or times out.
+func (l *DistributedLog) WaitForLeader(timeout time.Duration) error {
+	timeoutc := time.After(timeout)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeoutc:
+			return fmt.Errorf("timeout")
+		case <-ticker.C:
+			if l := l.raft.Leader(); l != "" {
+				return nil
+			}
+
+		}
+	}
+}
+
+// Close shuts the Raft instance down and closes the local log.
+func (l *DistributedLog) Close() error {
+	f := l.raft.Shutdown()
+	if err := f.Error(); err != nil {
+		return err
+	}
+	return l.Close()
+}
+
 // Apply reqds requests, identifies their type, and applies them.
 // Currently, there is only one, but other methods can me implemented
 // and called upon.
@@ -341,7 +407,7 @@ func (l *logStore) DeleteRange(min, max uint64) error {
 	return l.Truncate(max)
 }
 
-var _ raft.StreamLayer = (*StreamLayer)(nil-)
+var _ raft.StreamLayer = (*StreamLayer)(nil)
 
 // StreamLayer satisfies Raft's StreamLayer interface:
 /*type StreamLayer interface {
@@ -398,7 +464,7 @@ func (s *StreamLayer) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Compare([]byte{byte(RaftRPC)}, b) != 0{
+	if bytes.Compare([]byte{byte(RaftRPC)}, b) != 0 {
 		return nil, fmt.Errorf("not a raft rpc")
 	}
 	return conn, nil
@@ -413,4 +479,3 @@ func (s *StreamLayer) Close() error {
 func (s *StreamLayer) Addr() net.Addr {
 	return s.ln.Addr()
 }
-

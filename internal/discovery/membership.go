@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"github.com/hashicorp/raft"
 	"github.com/hashicorp/serf/serf"
 	"go.uber.org/zap"
 	"net"
@@ -133,8 +134,19 @@ func (m *Membership) Leave() error {
 	return m.serf.Leave()
 }
 
-// logError logsthe given error and message.
+// logError logs non-leader errors at the debug level. These
+// logs are good candidates for removal.
 func (m *Membership) logError(err error, msg string, member serf.Member) {
-	m.logger.Error(msg, zap.Error(err), zap.String("name", member.Name), zap.String("rpc_addr",
-		member.Tags["rpc_addr"]))
+	// m.logger.Error(msg, zap.Error(err), zap.String("name", member.Name), zap.String("rpc_addr",
+	// 	member.Tags["rpc_addr"]))
+	log := m.logger.Error
+	if err == raft.ErrNotLeader {
+		log = m.logger.Debug
+	}
+	log(
+		msg,
+		zap.Error(err),
+		zap.String("name", member.Name),
+		zap.String("rpc_addr", member.Tags["rpc_addr"]),
+	)
 }
