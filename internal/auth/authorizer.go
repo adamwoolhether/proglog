@@ -34,4 +34,3 @@ func (a *Authorizer) Authorize(subject, object, action string) error {
 	}
 	return nil
 }
-¥

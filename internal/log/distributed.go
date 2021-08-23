@@ -39,7 +39,7 @@ func NewDistributedLog(dataDir string, config Config) (*DistributedLog, error) {
 	if err := l.setupRaft(dataDir); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return l, nil
 }
 
 // setupLog creates the log where the server will store the
