@@ -26,6 +26,7 @@ import (
 type Config struct {
 	CommitLog  CommitLog
 	Authorizer Authorizer
+	GetServerer GetServerer
 }
 
 // These constans will match the values used in our ACL policy.
@@ -178,6 +179,17 @@ func (s *grpcServer) ConsumeStream(req *api.ConsumeRequest, stream api.Log_Consu
 			req.Offset++
 		}
 	}
+}
+
+func (s *grpcServer) GetServers(ctx context.Context, req *api.GetServersRequest) (*api.GetServersResponse, error) {
+	servers, err := s.GetServerer.GetServers()
+	if err != nil {
+		return nil, err
+	}
+	return &api.GetServersResponse{Servers: servers}, nil
+}
+type GetServerer interface {
+	GetServers() ([]*api.Server, error)
 }
 
 // CommitLog allows us to pass a log implementation based on our needs
