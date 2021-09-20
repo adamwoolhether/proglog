@@ -253,7 +253,7 @@ func (l *DistributedLog) Close() error {
 	if err := f.Error(); err != nil {
 		return err
 	}
-	return l.Close()
+	return l.log.Close()
 }
 
 // Apply reqds requests, identifies their type, and applies them.
@@ -276,12 +276,12 @@ func (l *fsm) applyAppend(b []byte) interface{} {
 	var req api.ProduceRequest
 	err := proto.Unmarshal(b, &req)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	offset, err := l.log.Append(req.Record)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return &api.ProduceResponse{Offset: offset}
@@ -327,7 +327,7 @@ func (f *fsm) Restore(r io.ReadCloser) error {
 		} else if err != nil {
 			return err
 		}
-		size := int64(enc.Uint16(b))
+		size := int64(enc.Uint64(b))
 		if _, err = io.CopyN(&buf, r, size); err != nil {
 			return err
 		}
@@ -341,13 +341,15 @@ func (f *fsm) Restore(r io.ReadCloser) error {
 				return err
 			}
 		}
-		if _, err := f.log.Append(record); err != nil {
+		if _, err = f.log.Append(record); err != nil {
 			return err
 		}
 		buf.Reset()
 	}
 	return nil
 }
+
+var _ raft.LogStore = (*logStore)(nil)
 
 type logStore struct {
 	*Log
@@ -440,7 +442,7 @@ func (s *StreamLayer) Dial(addr raft.ServerAddress, timeout time.Duration) (net.
 	if err != nil {
 		return nil, err
 	}
-	// identify to mux this is a raft rpm
+	// identify to mux this is a raft rpc
 	_, err = conn.Write([]byte{byte(RaftRPC)})
 	if err != nil {
 		return nil, err
@@ -466,6 +468,9 @@ func (s *StreamLayer) Accept() (net.Conn, error) {
 	}
 	if bytes.Compare([]byte{byte(RaftRPC)}, b) != 0 {
 		return nil, fmt.Errorf("not a raft rpc")
+	}
+	if s.serverTLSConfig != nil {
+		return tls.Server(conn, s.serverTLSConfig), nil
 	}
 	return conn, nil
 }
