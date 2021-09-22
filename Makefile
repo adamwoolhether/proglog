@@ -52,3 +52,8 @@ test:	$(CONFIG_PATH)/policy.csv $(CONFIG_PATH)/model.conf
 compile:
 		protoc 	--go_out=paths=source_relative:. -I. api/v1/*.proto \
 				--go-grpc_out=paths=source_relative:. -I. api/v1/*.proto
+
+TAG ?= 0.0.1
+
+build-docker:
+	docker build -t github.com/adamwoolhether/proglog:$(TAG) .
